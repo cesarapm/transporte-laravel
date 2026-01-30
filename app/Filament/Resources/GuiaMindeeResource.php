@@ -722,6 +722,57 @@ class GuiaMindeeResource extends Resource
                 ]),
             ])
             ->headerActions([
+                Tables\Actions\Action::make('limpiar_duplicadas')
+                    ->label('Limpiar Escaneadas Duplicadas')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Limpiar Guías Duplicadas')
+                    ->modalDescription('Se eliminarán las guías que tengan el mismo Manifiesto, Remitente y Destinatario. Solo se mantendrá el primer registro.')
+                    ->modalSubmitActionLabel('Sí, limpiar duplicadas')
+                    ->action(function () {
+                        try {
+                            // Obtener IDs de registros duplicados (mantener el más antiguo, eliminar los demás)
+                            $duplicados = \DB::select("
+                                SELECT gm1.id
+                                FROM guias_mindee gm1
+                                JOIN guias_mindee gm2
+                                  ON gm1.manifest_number = gm2.manifest_number
+                                 AND gm1.shipper_name = gm2.shipper_name
+                                 AND gm1.consignee_name = gm2.consignee_name
+                                 AND gm1.id > gm2.id
+                                WHERE gm1.manifest_number IS NOT NULL
+                                  AND gm1.shipper_name IS NOT NULL
+                                  AND gm1.consignee_name IS NOT NULL
+                            ");
+
+                            $idsEliminar = array_map(fn($item) => $item->id, $duplicados);
+                            $cantidad = count($idsEliminar);
+
+                            if ($cantidad > 0) {
+                                GuiaMindee::whereIn('id', $idsEliminar)->delete();
+
+                                Notification::make()
+                                    ->success()
+                                    ->title('Duplicados eliminados')
+                                    ->body("Se eliminaron {$cantidad} guías duplicadas.")
+                                    ->send();
+                            } else {
+                                Notification::make()
+                                    ->info()
+                                    ->title('No se encontraron duplicados')
+                                    ->body('No hay guías duplicadas para eliminar.')
+                                    ->send();
+                            }
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Error al limpiar duplicados')
+                                ->body('Ocurrió un error: ' . $e->getMessage())
+                                ->send();
+                        }
+                    }),
+
                 Tables\Actions\Action::make('exportar_excel')
                     ->label('Exportar Todo a Excel')
                     ->icon('heroicon-o-document-arrow-down')
