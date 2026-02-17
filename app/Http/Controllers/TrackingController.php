@@ -35,16 +35,23 @@ class TrackingController extends Controller
         if ($trackingNumber && $carrierCode) {
             $apiKey = env('TRACKINGMORE_API_KEY');
 
-            $options = [
-                'headers' => [
-                    'Tracking-Api-Key' => $apiKey,
-                    'Content-Type' => 'application/json'
-                ],
-                'verify' => env('APP_ENV') !== 'local'  // Deshabilitar la verificación SSL en local
-            ];
+            // $options = [
+            //     'headers' => [
+            //         'Tracking-Api-Key' => $apiKey,
+            //         'Content-Type' => 'application/json'
+            //     ],
+            //     'verify' => env('APP_ENV') !== 'local'  // Deshabilitar la verificación SSL en local
+            // ];
 
-            // Consultar tracking en TrackingMore
-            $trackingResponse = Http::withOptions($options)->get("https://api.trackingmore.com/v4/trackings/get?tracking_numbers={$trackingNumber}");
+            // // Consultar tracking en TrackingMore
+            // $trackingResponse = Http::withOptions($options)->get("https://api.trackingmore.com/v4/trackings/get?tracking_numbers={$trackingNumber}");
+            $trackingResponse = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $apiKey,
+                'Content-Type' => 'application/json'
+            ])->get("https://api.trackingmore.com/v4/trackings/{$trackingNumber}");
+
+
+
             Log::info("Informacion '{$trackingResponse}'");
             // Verificar si la respuesta fue exitosa
             if ($trackingResponse->successful()) {
