@@ -171,20 +171,20 @@ class GuiaResource extends Resource
 
                         return $paqueteria[$state] ?? 'Desconocida'; // Si no existe la clave, retorna 'Desconocida'
                     }),
-               //  Tables\Columns\TextColumn::make('estatus')->label('Estatus'),
+                //  Tables\Columns\TextColumn::make('estatus')->label('Estatus'),
 
-                             Tables\Columns\TextColumn::make('estatus')
+                Tables\Columns\TextColumn::make('estatus')
                     ->label('Estatus')
                     ->formatStateUsing(function ($state) {
                         return match ($state) {
-                         'EM' => 'Pendiente de informacion Interna',
-                        'TIE' => 'Guia Pendiente',
-                        'TEM' => 'Tramite Aduanal',
-                        'DOC' => 'Documentación Interna Mexico',
-                        'transit' => 'En Tránsito México',
-                        'delivered' => 'Entregado',
-                           'pending' => 'Pendiente',
-                        default => ucfirst($state),
+                            'EM' => 'Pendiente de informacion Interna',
+                            'TIE' => 'Guia Pendiente',
+                            'TEM' => 'Tramite Aduanal',
+                            'DOC' => 'Documentación Interna Mexico',
+                            'transit' => 'En Tránsito México',
+                            'delivered' => 'Entregado',
+                            'pending' => 'Pendiente',
+                            default => ucfirst($state),
                         };
                     })
                     ->sortable()
@@ -211,7 +211,7 @@ class GuiaResource extends Resource
                 Tables\Filters\SelectFilter::make('estatus')
                     ->label('Filtrar por Estatus')
                     ->options([
-                       'EM' => 'Pendiente de informacion Interna',
+                        'EM' => 'Pendiente de informacion Interna',
                         'TIE' => 'Guia Penidente',
                         'TEM' => 'Tramite Aduanal',
                         'DOC' => 'Documentación Interna Mexico',
@@ -220,7 +220,7 @@ class GuiaResource extends Resource
                         'pending' => 'Pendiente',
                     ])
                     ->searchable(),
-                    Tables\Filters\SelectFilter::make('guia_interna')
+                Tables\Filters\SelectFilter::make('guia_interna')
                     ->label('Filtrar por Guia')
                     ->options(
                         Guia::select('guia_interna') // Selecciona solo el campo remesa
@@ -231,10 +231,10 @@ class GuiaResource extends Resource
                     ->searchable()
             ])
             ->actions([
-                     Tables\Actions\Action::make('verRastreo')
-    ->label('Ver Rastreo')
-    ->url(fn($record) => route('rastreo.mostrar', ['numero' => $record->guia_interna]))
-    ->openUrlInNewTab(),
+                Tables\Actions\Action::make('verRastreo')
+                    ->label('Ver Rastreo')
+                    ->url(fn($record) => route('rastreo.mostrar', ['numero' => $record->guia_interna]))
+                    ->openUrlInNewTab(),
                 Tables\Actions\EditAction::make(),
 
                 Tables\Actions\DeleteAction::make(),  // Permite eliminar
@@ -248,24 +248,24 @@ class GuiaResource extends Resource
             ])
             ->bulkActions([
                 BulkAction::make('export_excel')
-                ->label('Exportar a Excel')
-                ->requiresConfirmation()
-                ->action(function ($records) {
-                    // Convertir los registros seleccionados a colección simple
-                    $data = $records->map(fn ($record) => [
-                        'id' => $record->id,
-                        'tel_remite'=>$record->tel_remite,
-                        'guia_interna' => $record->guia_interna,
-                        'remesa' => $record->remesa,
-                        'folio' => $record->folio,
-                        'paqueteria'=>$record->paqueteria,
-                        'rastreo'=>$record->rastreo,
+                    ->label('Exportar a Excel')
+                    ->requiresConfirmation()
+                    ->action(function ($records) {
+                        // Convertir los registros seleccionados a colección simple
+                        $data = $records->map(fn($record) => [
+                            'id' => $record->id,
+                            'tel_remite' => $record->tel_remite,
+                            'guia_interna' => $record->guia_interna,
+                            'remesa' => $record->remesa,
+                            'folio' => $record->folio,
+                            'paqueteria' => $record->paqueteria,
+                            'rastreo' => $record->rastreo,
 
-                    ]);
+                        ]);
 
-                    // Descargar el archivo Excel
-                    return Excel::download(new GuiasExport($data), 'registros.xlsx');
-                }),
+                        // Descargar el archivo Excel
+                        return Excel::download(new GuiasExport($data), 'registros.xlsx');
+                    }),
                 // BulkAction::make('delete')
                 //     ->requiresConfirmation()
                 //     ->action(fn(Collection $records) => $records->each->delete()),
@@ -310,23 +310,18 @@ class GuiaResource extends Resource
                                 'campo_modificado' => $estatusMensajes[$data['estatus']] ?? 'Estatus desconocido', // Mensaje basado en el estatus
                                 'created_at' => now(),
                             ]);
-
-
-
-
                         }
                         Notification::make()
-                        ->title('Estatus actualizado correctamente')
-                        ->success()
-                        ->send();
-
+                            ->title('Estatus actualizado correctamente')
+                            ->success()
+                            ->send();
                     }),
 
 
 
 
 
-              BulkAction::make('mandarMensaje')
+                BulkAction::make('mandarMensaje')
                     ->label('Mandar Mensaje')
                     ->action(function (Collection $records) {
                         $config = Configuration::getDefaultConfiguration()
@@ -373,7 +368,7 @@ class GuiaResource extends Resource
 
 
 
-          BulkAction::make('registrarTracking')
+                BulkAction::make('registrarTracking')
                     ->label('Registrar en TrackingMore')
                     ->action(function (Collection $records) {
                         foreach ($records as $record) {
@@ -385,17 +380,28 @@ class GuiaResource extends Resource
                                 continue;
                             }
 
+                            // $options = [
+                            //     'headers' => [
+                            //         'Content-Type' => 'application/json',
+                            //         'Tracking-Api-Key' => env('TRACKINGMORE_API_KEY'),
+                            //     ]
+                            // ];
                             $options = [
                                 'headers' => [
                                     'Content-Type' => 'application/json',
-                                    'Tracking-Api-Key' => env('TRACKINGMORE_API_KEY'),
+                                    'Authorization' => 'Bearer ' . env('TRACKINGMORE_API_KEY'),
                                 ]
                             ];
 
-                            $createResponse = Http::withOptions($options)->post('https://api.trackingmore.com/v4/trackings/create', [
-                                'tracking_number' => $trackingNumber,
-                                'courier_code' => $carrierCode,
-                            ]);
+                            // $createResponse = Http::withOptions($options)->post('https://api.trackingmore.com/v4/trackings/create', [
+                            //     'tracking_number' => $trackingNumber,
+                            //     'courier_code' => $carrierCode,
+                            // ]);
+                            $createResponse = Http::withOptions($options)
+                                ->post('https://api.trackingmore.com/v4/trackings', [
+                                    'tracking_number' => $trackingNumber,
+                                    'courier_code' => $carrierCode,
+                                ]);
 
                             if ($createResponse->failed() && ($createResponse->json()['meta']['code'] ?? null) !== 4101) {
                                 Log::error("❌ Error al crear tracking para {$trackingNumber}: ", $createResponse->json());
