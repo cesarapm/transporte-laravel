@@ -14,41 +14,105 @@ use Stripe\Exception\SignatureVerificationException;
 
 class WebhookController extends Controller
 {
+    // public function trackingmore(Request $request)
+    // {
+    //     Log::info('Webhook TrackingMore recibido: ', $request->all());
+
+    //     $data = $request->input('data');
+
+    //     $trackingNumber = $data['tracking_number'] ?? null;
+    //     $latestEvent = $data['latest_event'] ?? null;
+    //     $deliveryStatus = $data['delivery_status'] ?? null;
+    //     $latestCheckpointTime = $data['latest_checkpoint_time'] ?? now();
+
+    //     if (!$trackingNumber || !$deliveryStatus) {
+    //         Log::warning('Webhook recibido sin datos necesarios.');
+    //         return response()->json(['message' => 'Datos incompletos'], 400);
+    //     }
+
+    //     // Buscar guía por número de rastreo
+    //     $guias = Guia::where('rastreo', $trackingNumber)->get();
+
+    //     if ($guias->isEmpty()) {
+    //         Log::warning("Guías con rastreo {$trackingNumber} no encontradas.");
+    //         return response()->json(['message' => 'Guías no encontradas'], 404);
+    //     }
+
+    //     // Mapear delivery_status de TrackingMore a tu sistema de estatus
+    //     $nuevoEstatus = $deliveryStatus;
+
+    //     // Actualizar todas las guías encontradas
+    //     foreach ($guias as $guia) {
+    //         // Verificar si cambió el estatus
+    //         if ($guia->estatus !== $nuevoEstatus) {
+    //             $guia->estatus = $nuevoEstatus;
+    //             $guia->save();
+
+    //             // Validar si ya existe un historial con ese mismo campo_modificado
+    //             $eventoTexto = "TrackingMore - {$latestEvent}";
+
+    //             $yaExisteHistorial = GuiaHistorial::where('guia_id', $guia->id)
+    //                 ->where('campo_modificado', $eventoTexto)
+    //                 ->exists();
+
+    //             if (!$yaExisteHistorial) {
+    //                 GuiaHistorial::create([
+    //                     'guia_id' => $guia->id,
+    //                     'campo_modificado' => $eventoTexto,
+    //                     'created_at' => $latestCheckpointTime,
+    //                 ]);
+
+    //                 Log::info("Historial creado para guía ID {$guia->id}: '{$eventoTexto}'");
+    //             } else {
+    //                 Log::info("Evento ya registrado previamente para guía ID {$guia->id}: '{$eventoTexto}'");
+    //             }
+
+    //             Log::info("Actualización de guía ID {$guia->id}: Nuevo estatus '{$nuevoEstatus}', evento: '{$latestEvent}'");
+    //         } else {
+    //             Log::info("Guía ID {$guia->id} ya tiene estatus '{$nuevoEstatus}', sin cambios.");
+    //         }
+    //     }
+
+    //     return response()->json(['message' => 'OK'], 200);
+
+    // }
     public function trackingmore(Request $request)
-    {
-        Log::info('Webhook TrackingMore recibido: ', $request->all());
+{
+    Log::info('Webhook RAW:', ['body' => $request->getContent()]);
+    Log::info('Webhook Parsed:', $request->all());
 
-        $data = $request->input('data');
+    $trackings = $request->input('data.trackings');
 
-        $trackingNumber = $data['tracking_number'] ?? null;
-        $latestEvent = $data['latest_event'] ?? null;
-        $deliveryStatus = $data['delivery_status'] ?? null;
-        $latestCheckpointTime = $data['latest_checkpoint_time'] ?? now();
+    if (!$trackings || !is_array($trackings)) {
+        Log::warning('Webhook sin trackings.');
+        return response()->json(['message' => 'No trackings'], 200);
+    }
+
+    foreach ($trackings as $tracking) {
+
+        $trackingNumber = $tracking['tracking_number'] ?? null;
+        $latestEvent = $tracking['latest_event'] ?? null;
+        $deliveryStatus = $tracking['delivery_status'] ?? null;
+        $latestCheckpointTime = $tracking['latest_checkpoint_time'] ?? now();
 
         if (!$trackingNumber || !$deliveryStatus) {
-            Log::warning('Webhook recibido sin datos necesarios.');
-            return response()->json(['message' => 'Datos incompletos'], 400);
+            continue;
         }
 
-        // Buscar guía por número de rastreo
         $guias = Guia::where('rastreo', $trackingNumber)->get();
 
         if ($guias->isEmpty()) {
             Log::warning("Guías con rastreo {$trackingNumber} no encontradas.");
-            return response()->json(['message' => 'Guías no encontradas'], 404);
+            continue;
         }
 
-        // Mapear delivery_status de TrackingMore a tu sistema de estatus
-        $nuevoEstatus = $deliveryStatus;
-
-        // Actualizar todas las guías encontradas
         foreach ($guias as $guia) {
-            // Verificar si cambió el estatus
-            if ($guia->estatus !== $nuevoEstatus) {
-                $guia->estatus = $nuevoEstatus;
+
+            if ($guia->estatus !== $deliveryStatus) {
+
+                $guia->estatus = $deliveryStatus;
                 $guia->save();
 
-                // Validar si ya existe un historial con ese mismo campo_modificado
                 $eventoTexto = "TrackingMore - {$latestEvent}";
 
                 $yaExisteHistorial = GuiaHistorial::where('guia_id', $guia->id)
@@ -62,20 +126,15 @@ class WebhookController extends Controller
                         'created_at' => $latestCheckpointTime,
                     ]);
 
-                    Log::info("Historial creado para guía ID {$guia->id}: '{$eventoTexto}'");
-                } else {
-                    Log::info("Evento ya registrado previamente para guía ID {$guia->id}: '{$eventoTexto}'");
+                    Log::info("Historial creado para guía ID {$guia->id}");
                 }
-
-                Log::info("Actualización de guía ID {$guia->id}: Nuevo estatus '{$nuevoEstatus}', evento: '{$latestEvent}'");
-            } else {
-                Log::info("Guía ID {$guia->id} ya tiene estatus '{$nuevoEstatus}', sin cambios.");
             }
         }
-
-        return response()->json(['message' => 'OK'], 200);
-
     }
+
+    return response()->json(['message' => 'OK'], 200);
+}
+
 
     public function stripe(Request $request)
     {
