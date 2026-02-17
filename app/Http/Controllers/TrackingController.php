@@ -45,10 +45,17 @@ class TrackingController extends Controller
 
             // // Consultar tracking en TrackingMore
             // $trackingResponse = Http::withOptions($options)->get("https://api.trackingmore.com/v4/trackings/get?tracking_numbers={$trackingNumber}");
+            // $trackingResponse = Http::withHeaders([
+            //     'Authorization' => 'Bearer ' . $apiKey,
+            //     'Content-Type' => 'application/json'
+            // ])->get("https://api.trackingmore.com/v4/trackings/{$trackingNumber}");
             $trackingResponse = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $apiKey,
-                'Content-Type' => 'application/json'
-            ])->get("https://api.trackingmore.com/v4/trackings/{$trackingNumber}");
+    'Tracking-Api-Key' => $apiKey,
+    'Content-Type' => 'application/json'
+])->get('https://api.trackingmore.com/v4/trackings/get', [
+    'tracking_numbers' => $trackingNumber
+]);
+
 
 
 
