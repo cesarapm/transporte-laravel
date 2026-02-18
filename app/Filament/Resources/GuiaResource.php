@@ -41,6 +41,8 @@ use ClickSend\Configuration;
 use ClickSend\Api\SMSApi;
 use ClickSend\Model\SmsMessage;
 use ClickSend\Model\SmsMessageCollection;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 
 
 
@@ -371,42 +373,188 @@ class GuiaResource extends Resource
                 BulkAction::make('registrarTracking')
                     ->label('Registrar en TrackingMore')
                     ->action(function (Collection $records) {
+                        $apiKey = env('TRACKINGMORE_API_KEY');
+
+                        // Verificar si la API Key existe
+                        if (!$apiKey) {
+                            Log::error("🔴 TRACKINGMORE_API_KEY no está configurada en el archivo .env");
+                            Notification::make()
+                                ->title('Error de configuración')
+                                ->body('La API Key de TrackingMore no está configurada.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        Log::info("🔑 API Key configurada: " . substr($apiKey, 0, 10) . "..." . substr($apiKey, -5));
+
+                        // Verificar conectividad con TrackingMore API
+                        try {
+                            Log::info("🔌 Verificando conectividad con TrackingMore API...");
+                            $testConnection = Http::timeout(10)
+                                ->withHeaders([
+                                    'Tracking-Api-Key' => $apiKey,
+                                ])
+                                ->get('https://api.trackingmore.com/v4/carriers');
+
+                            if ($testConnection->successful()) {
+                                Log::info("✅ Conexión exitosa con TrackingMore API");
+                            } else {
+                                Log::warning("⚠️ La API respondió pero con código: " . $testConnection->status());
+                            }
+                        } catch (ConnectionException $e) {
+                            Log::error("🔴 NO HAY CONEXIÓN con TrackingMore API", [
+                                'error' => $e->getMessage(),
+                            ]);
+                            Notification::make()
+                                ->title('Error de conexión')
+                                ->body('No se puede conectar con TrackingMore. Verifica tu conexión a internet.')
+                                ->danger()
+                                ->send();
+                            return;
+                        } catch (\Exception $e) {
+                            Log::error("🔴 Error al verificar conectividad: " . $e->getMessage());
+                        }
+
                         foreach ($records as $record) {
                             $carrierCode = $record->paqueteria;
                             $trackingNumber = $record->rastreo;
 
-                            if (!$carrierCode || !$trackingNumber) {
-                                Log::warning("Datos incompletos para el registro de tracking: {$record->id}");
+                            if (!$trackingNumber) {
+                                Log::warning("⚠️ Número de rastreo faltante para el registro: {$record->id}");
                                 continue;
                             }
 
-                            // $options = [
-                            //     'headers' => [
-                            //         'Content-Type' => 'application/json',
-                            //         'Tracking-Api-Key' => env('TRACKINGMORE_API_KEY'),
-                            //     ]
-                            // ];
+                            if (!$carrierCode) {
+                                Log::warning("⚠️ Carrier code faltante para el registro: {$record->id}");
+                                continue;
+                            }
+
                             $options = [
                                 'headers' => [
+                                    'Accept' => 'application/json',
                                     'Content-Type' => 'application/json',
-                                    'Authorization' => 'Bearer ' . env('TRACKINGMORE_API_KEY'),
+                                    'Tracking-Api-Key' => $apiKey,
                                 ]
                             ];
 
-                            // $createResponse = Http::withOptions($options)->post('https://api.trackingmore.com/v4/trackings/create', [
-                            //     'tracking_number' => $trackingNumber,
-                            //     'courier_code' => $carrierCode,
-                            // ]);
-                            $createResponse = Http::withOptions($options)
-                                ->post('https://api.trackingmore.com/v4/trackings', [
-                                    'tracking_number' => $trackingNumber,
-                                    'courier_code' => $carrierCode,
-                                ]);
+                            // PASO 1: Crear el tracking
+                            Log::info("📦 Intentando registrar tracking:", [
+                                'tracking_number' => $trackingNumber,
+                                'courier_code' => $carrierCode,
+                            ]);
 
-                            if ($createResponse->failed() && ($createResponse->json()['meta']['code'] ?? null) !== 4101) {
-                                Log::error("❌ Error al crear tracking para {$trackingNumber}: ", $createResponse->json());
-                            } else {
-                                Log::info("✅ Tracking creado para {$trackingNumber}");
+                            $url = 'https://api.trackingmore.com/v4/trackings/create';
+                            Log::info("🌐 URL: {$url}");
+
+                            try {
+                                $createResponse = Http::timeout(30)
+                                    ->withOptions($options)
+                                    ->post($url, [
+                                        'tracking_number' => $trackingNumber,
+                                        'courier_code' => $carrierCode,
+                                    ]);
+
+                                $statusCode = $createResponse->status();
+                                $responseBody = $createResponse->json();
+                            } catch (ConnectionException $e) {
+                                Log::error("🔴 Error de conexión al intentar crear tracking:", [
+                                    'tracking_number' => $trackingNumber,
+                                    'error' => $e->getMessage(),
+                                    'tipo' => 'No se pudo resolver el host o problema de red',
+                                ]);
+                                Log::error("💡 Verifica: 1) Conexión a internet, 2) DNS del servidor, 3) Firewall");
+                                continue; // Saltar a la siguiente guía
+                            } catch (RequestException $e) {
+                                Log::error("🔴 Error en la petición HTTP:", [
+                                    'tracking_number' => $trackingNumber,
+                                    'error' => $e->getMessage(),
+                                ]);
+                                continue;
+                            } catch (\Exception $e) {
+                                Log::error("🔴 Error inesperado:", [
+                                    'tracking_number' => $trackingNumber,
+                                    'error' => $e->getMessage(),
+                                ]);
+                                continue;
+                            }
+
+                            Log::info("📡 Código de respuesta HTTP: {$statusCode}");
+                            Log::info("📄 Respuesta completa:", $responseBody ?? []);
+
+                            $metaCode = $responseBody['meta']['code'] ?? null;
+
+                            // Código 200 = Creado exitosamente
+                            if ($statusCode === 200 && $metaCode === 200) {
+                                Log::info("✅ Tracking NUEVO creado exitosamente para {$trackingNumber}");
+
+                                // Verificar que se haya creado consultando el tracking
+                                $verifyResponse = Http::withOptions($options)
+                                    ->get("https://api.trackingmore.com/v4/trackings/get?tracking_numbers={$trackingNumber}&courier_code={$carrierCode}");
+
+                                Log::info("🔍 Verificación del tracking:", $verifyResponse->json() ?? []);
+                            }
+                            // Código 4101 = Ya existe
+                            elseif ($metaCode === 4101) {
+                                Log::warning("⚠️ El tracking {$trackingNumber} YA EXISTE en TrackingMore");
+
+                                // Verificar que realmente exista en la plataforma
+                                $verifyResponse = Http::withOptions($options)
+                                    ->get("https://api.trackingmore.com/v4/trackings/get?tracking_numbers={$trackingNumber}&courier_code={$carrierCode}");
+
+                                $verifyBody = $verifyResponse->json();
+                                Log::info("🔍 Verificación del tracking existente:", $verifyBody ?? []);
+
+                                if (empty($verifyBody['data']) || count($verifyBody['data']) === 0) {
+                                    Log::error("🚨 PROBLEMA: El API dice que existe pero NO se encuentra en la plataforma!");
+                                    Log::error("💡 Posible problema con courier_code: '{$carrierCode}' - Verifica que sea el código correcto en TrackingMore");
+                                } else {
+                                    // Verificar si está archivado
+                                    $trackingData = $verifyBody['data'][0] ?? null;
+                                    $isArchived = ($trackingData['archived'] ?? 'false') === 'true';
+                                    $trackingId = $trackingData['id'] ?? null;
+
+                                    if ($isArchived && $trackingId) {
+                                        Log::warning("📦 El tracking está ARCHIVADO. Intentando desarchivar...");
+                                        Log::info("🆔 ID de TrackingMore: {$trackingId}");
+
+                                        // Desarchivar el tracking usando el ID interno de TrackingMore
+                                        $unarchiveResponse = Http::withOptions($options)
+                                            ->put('https://api.trackingmore.com/v4/trackings/update/' . $trackingId, [
+                                                'archived' => 'false',
+                                            ]);
+
+                                        $unarchiveBody = $unarchiveResponse->json();
+                                        Log::info("📂 Resultado de desarchivar:", $unarchiveBody ?? []);
+
+                                        if ($unarchiveResponse->successful() && ($unarchiveBody['meta']['code'] ?? null) === 200) {
+                                            Log::info("✅ Tracking DESARCHIVADO exitosamente: {$trackingNumber}");
+                                            Log::info("🔗 Puedes verificarlo en: https://admin.trackingmore.com/shipments/numbers?search={$trackingNumber}");
+                                        } else {
+                                            Log::error("❌ Error al desarchivar: ", $unarchiveBody ?? []);
+                                            Log::warning("💡 El tracking existe pero permanece archivado. Puedes desarchivarlo manualmente en TrackingMore");
+                                        }
+                                    } elseif ($isArchived && !$trackingId) {
+                                        Log::error("❌ No se pudo obtener el ID del tracking para desarchivarlo");
+                                    } else {
+                                        Log::info("✅ El tracking existe y NO está archivado");
+                                    }
+                                }
+                            }
+                            // Código 4120 = Courier code inválido
+                            elseif ($metaCode === 4120) {
+                                Log::error("🚨 El courier_code '{$carrierCode}' NO es válido en TrackingMore");
+                                Log::error("💡 Debes verificar el código correcto en: https://www.trackingmore.com/es/couriers.html");
+                                Log::error("💡 Tracking number: {$trackingNumber}");
+                            }
+                            // Otros errores
+                            elseif ($createResponse->failed()) {
+                                Log::error("❌ Error al crear tracking para {$trackingNumber}:", [
+                                    'status_code' => $statusCode,
+                                    'meta_code' => $metaCode,
+                                    'response' => $responseBody,
+                                    'carrier_code' => $carrierCode,
+                                ]);
                             }
                         }
 
